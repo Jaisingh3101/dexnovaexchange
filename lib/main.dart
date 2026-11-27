@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'providers/market_provider.dart';
+import 'providers/portfolio_provider.dart';
+import 'providers/theme_provider.dart';
+import 'providers/wallet_provider.dart';
 import 'screens/main_shell.dart';
-import 'screens/splash_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'services/api_service.dart';
 import 'theme.dart';
 
 void main() {
@@ -9,8 +15,8 @@ void main() {
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      statusBarBrightness: Brightness.dark,
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
     ),
   );
   runApp(const DexNovaApp(showSplash: true));
@@ -18,22 +24,47 @@ void main() {
 
 class DexNovaApp extends StatelessWidget {
   final bool showSplash;
-  const DexNovaApp({super.key, this.showSplash = false});
+  final ApiServiceContract? apiService;
+  final ThemeMode initialThemeMode;
+
+  const DexNovaApp({
+    super.key,
+    this.showSplash = false,
+    this.apiService,
+    this.initialThemeMode = ThemeMode.light,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeNotifier,
-      builder: (_, mode, _) {
-        return MaterialApp(
-          title: 'DexNova',
+    return MultiProvider(
+      providers: [
+        Provider<ApiServiceContract>(
+          create: (_) => apiService ?? ApiService(),
+          dispose: (_, svc) {
+            if (apiService == null) svc.dispose();
+          },
+        ),
+        ChangeNotifierProvider<ThemeProvider>(
+          create: (_) => ThemeProvider(initialThemeMode),
+        ),
+        ChangeNotifierProvider<WalletProvider>(create: (_) => WalletProvider()),
+        ChangeNotifierProvider<MarketProvider>(
+          create: (ctx) => MarketProvider(ctx.read<ApiServiceContract>()),
+        ),
+        ChangeNotifierProvider<PortfolioProvider>(
+          create: (ctx) => PortfolioProvider(ctx.read<ApiServiceContract>()),
+        ),
+      ],
+      child: Consumer<ThemeProvider>(
+        builder: (_, themeProv, _) => MaterialApp(
+          title: 'HyperDEX',
           debugShowCheckedModeBanner: false,
           theme: buildLightTheme(),
           darkTheme: buildDarkTheme(),
-          themeMode: mode,
-          home: showSplash ? const SplashScreen() : const MainShell(),
-        );
-      },
+          themeMode: themeProv.mode,
+          home: showSplash ? const OnboardingScreen() : const MainShell(),
+        ),
+      ),
     );
   }
 }

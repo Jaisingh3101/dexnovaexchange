@@ -1,29 +1,58 @@
 import 'package:flutter/material.dart';
-import '../data.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../models/dex_models.dart';
+import '../providers/market_provider.dart';
+import '../providers/portfolio_provider.dart';
+import '../providers/wallet_provider.dart';
 import '../theme.dart';
-import '../widgets/charts.dart';
 import '../widgets/common.dart';
 import '../widgets/flaticon.dart';
+import '../widgets/hyper_header.dart';
+import '../widgets/wallet_switcher.dart';
 import 'create_wallet_screen.dart';
-import 'dapp_browser_screen.dart';
-import 'deposit_screen.dart';
-import 'nft_gallery_screen.dart';
 import 'recovery_phrase_screen.dart';
 import 'security_screen.dart';
-import 'send_receive_screen.dart';
-import 'swap_bridge_screen.dart';
-import 'token_manager_screen.dart';
-import 'withdraw_screen.dart';
 
 class WalletScreen extends StatefulWidget {
-  const WalletScreen({super.key});
+  final ValueChanged<DexPair>? onOpenPair;
+  final ValueNotifier<int>? tabRequest;
+  const WalletScreen({super.key, this.onOpenPair, this.tabRequest});
   @override
   State<WalletScreen> createState() => _WalletScreenState();
 }
 
 class _WalletScreenState extends State<WalletScreen> {
-  int tab = 0;
+  int tab = 0; // 0 On-Chain | 1 Orders | 2 Watchlist
   bool hidden = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.tabRequest?.addListener(_onTabRequested);
+  }
+
+  @override
+  void didUpdateWidget(covariant WalletScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tabRequest != widget.tabRequest) {
+      oldWidget.tabRequest?.removeListener(_onTabRequested);
+      widget.tabRequest?.addListener(_onTabRequested);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.tabRequest?.removeListener(_onTabRequested);
+    super.dispose();
+  }
+
+  void _onTabRequested() {
+    final req = widget.tabRequest?.value ?? 0;
+    if (mounted && req >= 0 && req <= 2) {
+      setState(() => tab = req);
+    }
+  }
 
   void _push(Widget w) =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => w));
@@ -31,11 +60,19 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   Widget build(BuildContext context) {
     final p = context.pal;
+    final walletProv = context.watch<WalletProvider>();
+    final portfolio = context.watch<PortfolioProvider>();
+    final market = context.watch<MarketProvider>();
+    final wallets = walletProv.wallets;
+    final wallet = walletProv.activeWallet;
+
     return SafeArea(
+      bottom: false,
       child: Column(
         children: [
+          HyperTopBar(onSelectPair: widget.onOpenPair),
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 8, 2),
+            padding: const EdgeInsets.fromLTRB(12, 2, 8, 2),
             child: Row(
               children: [
                 Flexible(
@@ -44,7 +81,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: p.text,
                     ),
@@ -53,7 +90,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 const SizedBox(width: 6),
                 Flexible(
                   child: GestureDetector(
-                    onTap: () => _push(const CreateWalletScreen(initialTab: 0)),
+                    onTap: () => showWalletSwitcherSheet(context),
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Container(
@@ -69,14 +106,20 @@ class _WalletScreenState extends State<WalletScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const FIcon(
+                            FIcon(
                               Flaticons.wallet,
                               size: 12,
-                              color: AppColors.primaryLight,
+                              color: wallet != null
+                                  ? AppColors.green
+                                  : AppColors.primaryLight,
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              'Main Wallet',
+                              wallet != null
+                                  ? '${wallet.name} (${wallets.length})'
+                                  : (wallets.isNotEmpty
+                                        ? 'Switch (${wallets.length})'
+                                        : 'Connect Wallet'),
                               style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
@@ -95,17 +138,16 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                const ThemeToggleButton(compact: true),
+                const Spacer(),
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
-                    minWidth: 34,
-                    minHeight: 34,
+                    minWidth: 32,
+                    minHeight: 32,
                   ),
                   onPressed: () => _push(const SecurityScreen()),
-                  icon: FIcon(Flaticons.shieldCheck, size: 19, color: p.text),
+                  icon: FIcon(Flaticons.shieldCheck, size: 18, color: p.text),
                 ),
               ],
             ),
@@ -114,15 +156,11 @@ class _WalletScreenState extends State<WalletScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
               children: [
-                _balance(p),
-                const SizedBox(height: 8),
-                _walletManagement(p),
-                const SizedBox(height: 6),
-                _web3Tools(p),
+                _balanceHero(p, wallet, portfolio, market),
                 const SizedBox(height: 10),
                 _tabs(p),
                 const SizedBox(height: 8),
-                ..._tabContent(p),
+                ..._tabContent(p, wallet, portfolio, market),
               ],
             ),
           ),
@@ -131,88 +169,200 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  Widget _balance(AppPalette p) {
+  Widget _balanceHero(
+    AppPalette p,
+    WalletAccount? wallet,
+    PortfolioProvider portfolio,
+    MarketProvider market,
+  ) {
+    final totalUsd = portfolio.totalOnChainUsd(market.nativeUsdPrice);
+    final isLoading = portfolio.isLoadingBalances;
+
     return GlassCard(
       gradient: p.heroGradient,
       radius: 14,
       padding: const EdgeInsets.all(12),
       borderColor: AppColors.primary.withValues(alpha: 0.35),
-      child: Stack(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Positioned(
-            right: 0,
-            top: 0,
-            width: 120,
-            height: 60,
-            child: SparkLine(
-              values: [3, 4, 3.6, 5, 4.6, 6, 5.4, 7, 6.6, 8.5, 9],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
-              Row(
-                children: [
-                  const Text(
-                    'Total Balance',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                  const SizedBox(width: 6),
-                  GestureDetector(
-                    onTap: () => setState(() => hidden = !hidden),
-                    child: FIcon(
-                      hidden ? Flaticons.eyeOff : Flaticons.eye,
-                      size: 15,
-                      color: Colors.white70,
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        wallet != null
+                            ? '${wallet.name} · On-Chain'
+                            : 'On-Chain Web3 Wallet',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                hidden ? '\$ ••••••' : '\$48,392.32',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => setState(() => hidden = !hidden),
+                      child: FIcon(
+                        hidden ? Flaticons.eyeOff : Flaticons.eye,
+                        size: 15,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const ChangeText(5.21, size: 12),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  _heroBtn(
-                    Flaticons.deposit,
-                    'Deposit',
-                    () => _push(const DepositScreen()),
-                    filled: true,
+              if (wallet != null)
+                GestureDetector(
+                  onTap: () => context
+                      .read<PortfolioProvider>()
+                      .refreshOnChainBalances(wallet.ethAddress),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const FIcon(
+                          Flaticons.refresh,
+                          size: 11,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          isLoading ? 'Syncing…' : 'Sync RPC',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 6),
-                  _heroBtn(
-                    Flaticons.withdraw,
-                    'Withdraw',
-                    () => _push(const WithdrawScreen()),
-                  ),
-                  const SizedBox(width: 6),
-                  _heroBtn(
-                    Flaticons.send,
-                    'Send',
-                    () => _push(const SendReceiveScreen(initialTab: 0)),
-                  ),
-                  const SizedBox(width: 6),
-                  _heroBtn(
-                    Flaticons.receive,
-                    'Receive',
-                    () => _push(const SendReceiveScreen(initialTab: 1)),
-                  ),
-                ],
-              ),
+                ),
             ],
           ),
+          const SizedBox(height: 4),
+          Text(
+            hidden ? '\$ ••••••' : fmtCompactUsd(totalUsd),
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (wallet != null) ...[
+            Row(
+              children: [
+                _chainAddrChip('EVM', wallet.shortEth, wallet.ethAddress),
+                const SizedBox(width: 6),
+                _chainAddrChip('BTC', wallet.shortBtc, wallet.btcAddress),
+                const SizedBox(width: 6),
+                _chainAddrChip(
+                  'SOL',
+                  wallet.shortAddress(wallet.solAddress),
+                  wallet.solAddress,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _heroBtn(
+                  Flaticons.wallet,
+                  'Switch / Add Wallet',
+                  () => showWalletSwitcherSheet(context),
+                  filled: true,
+                ),
+                const SizedBox(width: 8),
+                _heroBtn(
+                  Flaticons.key,
+                  'Backup Phrase',
+                  () => _push(const RecoveryPhraseScreen()),
+                ),
+              ],
+            ),
+          ] else ...[
+            const Text(
+              'Connect or create a self-custody wallet to query live EVM RPC balances.',
+              style: TextStyle(fontSize: 11, color: Colors.white70),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _heroBtn(
+                  Flaticons.addWallet,
+                  'Create Wallet',
+                  () => _push(const CreateWalletScreen(initialTab: 0)),
+                  filled: true,
+                ),
+                const SizedBox(width: 8),
+                _heroBtn(
+                  Flaticons.recoverWallet,
+                  'Recover Seed',
+                  () => _push(const CreateWalletScreen(initialTab: 1)),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
+
+  Widget _chainAddrChip(String tag, String shortAddr, String fullAddr) =>
+      Expanded(
+        child: GestureDetector(
+          onTap: () {
+            Clipboard.setData(ClipboardData(text: fullAddr));
+            showToast(context, 'Copied $tag: $shortAddr');
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  tag,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.green,
+                  ),
+                ),
+                const SizedBox(width: 3),
+                Expanded(
+                  child: Text(
+                    shortAddr,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   Widget _heroBtn(
     Flaticons icon,
@@ -224,11 +374,11 @@ class _WalletScreenState extends State<WalletScreen> {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          height: 34,
+          height: 36,
           decoration: BoxDecoration(
             gradient: filled ? AppColors.primaryGradient : null,
             color: filled ? null : Colors.white.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(9),
             border: filled
                 ? null
                 : Border.all(color: Colors.white.withValues(alpha: 0.22)),
@@ -237,14 +387,14 @@ class _WalletScreenState extends State<WalletScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               FIcon(icon, size: 13, color: Colors.white),
-              const SizedBox(width: 4),
+              const SizedBox(width: 5),
               Flexible(
                 child: Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
                   ),
@@ -257,112 +407,8 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  Widget _walletManagement(AppPalette p) {
-    final items = [
-      (
-        Flaticons.addWallet,
-        'Create Wallet',
-        AppColors.primary,
-        () => _push(const CreateWalletScreen(initialTab: 0)),
-      ),
-      (
-        Flaticons.recoverWallet,
-        'Recover Wallet',
-        AppColors.blue,
-        () => _push(const CreateWalletScreen(initialTab: 1)),
-      ),
-      (
-        Flaticons.key,
-        'Backup Phrase',
-        AppColors.green,
-        () => _push(const RecoveryPhraseScreen()),
-      ),
-    ];
-    return Row(
-      children: [
-        for (var i = 0; i < items.length; i++) ...[
-          if (i > 0) const SizedBox(width: 6),
-          Expanded(
-            child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-              radius: 10,
-              onTap: items[i].$4,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  FBadgeIcon(
-                    items[i].$1,
-                    color: items[i].$3,
-                    size: 24,
-                    iconSize: 13,
-                    radius: 7,
-                  ),
-                  const SizedBox(width: 5),
-                  Flexible(
-                    child: Text(
-                      items[i].$2,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: p.text,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _web3Tools(AppPalette p) {
-    final tools = [
-      (Flaticons.trade, 'DEX Swap', () => _push(const SwapBridgeScreen())),
-      (Flaticons.network, 'DApps', () => _push(const DappBrowserScreen())),
-      (Flaticons.sparkles, 'NFTs', () => _push(const NftGalleryScreen())),
-      (Flaticons.settings, 'Tokens', () => _push(const TokenManagerScreen())),
-    ];
-    return Row(
-      children: [
-        for (var i = 0; i < tools.length; i++) ...[
-          if (i > 0) const SizedBox(width: 6),
-          Expanded(
-            child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
-              radius: 9,
-              onTap: tools[i].$3,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  FIcon(tools[i].$1, size: 13, color: AppColors.primaryLight),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      tools[i].$2,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: p.text,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
   Widget _tabs(AppPalette p) {
-    const labels = ['Assets', 'History', 'Staking'];
+    const labels = ['On-Chain', 'Orders', 'Watchlist'];
     return Container(
       padding: const EdgeInsets.all(2.5),
       decoration: BoxDecoration(
@@ -401,199 +447,243 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  List<Widget> _tabContent(AppPalette p) {
+  List<Widget> _tabContent(
+    AppPalette p,
+    WalletAccount? wallet,
+    PortfolioProvider portfolio,
+    MarketProvider market,
+  ) {
     if (tab == 0) {
+      final rpcChains = kDexChains.values
+          .where((c) => c.rpcUrl != null)
+          .toList();
+      final balances = portfolio.onChainBalances;
       return [
-        ...coins.where((c) => c.holding > 0).map((c) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              radius: 11,
-              onTap: () => _push(const SendReceiveScreen(initialTab: 0)),
-              child: Row(
-                children: [
-                  CoinIcon(c, size: 30),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          c.symbol,
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                            color: p.text,
-                          ),
-                        ),
-                        Text(
-                          c.name,
-                          style: TextStyle(fontSize: 11, color: p.textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        c.symbol == 'USDT'
-                            ? fmtUsd(c.holding)
-                            : c.holding.toStringAsFixed(4),
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          color: p.text,
-                        ),
-                      ),
-                      Text(
-                        '≈ \$${fmtUsd(c.value)}',
-                        style: TextStyle(fontSize: 11, color: p.textMuted),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+        if (wallet == null)
+          GlassCard(
+            padding: const EdgeInsets.all(14),
+            child: Text(
+              'No active wallet — tap Create Wallet or Recover Seed above to check live EVM balances.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: p.textMuted),
             ),
-          );
-        }),
-        GlassCard(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-          radius: 11,
-          onTap: () => _push(const TokenManagerScreen(initialTab: 1)),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const FIcon(
-                Flaticons.addWallet,
-                size: 14,
-                color: AppColors.primaryLight,
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'Import Custom Token / Manage Networks',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: p.textSecondary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ];
-    }
-    if (tab == 1) {
-      final items = [
-        ('Deposit', 'USDT', '+2,000.00', true, 'Nov 20, 14:22'),
-        ('Withdraw', 'BTC', '-0.0150', false, 'Nov 19, 09:10'),
-        ('Buy', 'ETH', '+0.5000', true, 'Nov 18, 18:45'),
-        ('Sell', 'SOL', '-1.2000', false, 'Nov 17, 11:03'),
-        ('Deposit', 'BNB', '+0.5000', true, 'Nov 16, 08:30'),
-      ];
-      return items
-          .map(
-            (e) => Padding(
+          )
+        else
+          for (final c in rpcChains)
+            Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: GlassCard(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
-                  vertical: 8,
+                  vertical: 9,
                 ),
-                radius: 11,
                 child: Row(
                   children: [
-                    FBadgeIcon(
-                      e.$4 ? Flaticons.receive : Flaticons.send,
-                      color: e.$4 ? AppColors.green : AppColors.red,
-                      size: 30,
-                      iconSize: 14,
-                    ),
+                    ChainBadge(c.slug, size: 26),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${e.$1} ${e.$2}',
+                            c.name,
                             style: TextStyle(
                               fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                               color: p.text,
                             ),
                           ),
                           Text(
-                            e.$5,
-                            style: TextStyle(fontSize: 11, color: p.textMuted),
+                            'Native Gas (${c.symbol})',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: p.textMuted,
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    Text(
-                      e.$3,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: e.$4 ? AppColors.green : AppColors.red,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          )
-          .toList();
-    }
-    final stakes = [('ETH', 4.2), ('SOL', 6.8), ('BNB', 3.1), ('USDT', 8.0)];
-    return stakes
-        .map(
-          (s) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              radius: 11,
-              child: Row(
-                children: [
-                  CoinIcon(coinBy(s.$1), size: 28),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          s.$1,
+                          '${(balances[c.slug] ?? 0).toStringAsFixed(5)} ${c.symbol}',
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: 12.5,
                             fontWeight: FontWeight.w700,
                             color: p.text,
                           ),
                         ),
                         Text(
-                          'Flexible',
+                          fmtCompactUsd(
+                            (balances[c.slug] ?? 0) *
+                                market.nativeUsdPrice(c.symbol),
+                          ),
+                          style: TextStyle(fontSize: 10.5, color: p.textMuted),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+      ];
+    }
+
+    if (tab == 1) {
+      final orders = portfolio.orders;
+      if (orders.isEmpty) {
+        return [
+          GlassCard(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'No orders yet — place a Spot Trade or Convert order to track it here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: p.textMuted),
+            ),
+          ),
+        ];
+      }
+      return [
+        for (final o in orders)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: GlassCard(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                children: [
+                  ChainBadge(o.chain, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${o.isBuy ? 'Buy' : 'Sell'} ${o.symbol}/${o.quoteSymbol} · ${o.orderType}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: p.text,
+                          ),
+                        ),
+                        Text(
+                          '${fmtCompactNum(o.amount)} @ ${fmtDexPrice(o.price)}',
                           style: TextStyle(fontSize: 11, color: p.textMuted),
                         ),
                       ],
                     ),
                   ),
-                  Text(
-                    '${s.$2}% APY',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.green,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        fmtCompactUsd(o.totalUsd),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: p.text,
+                        ),
+                      ),
+                      Text(
+                        o.status,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: o.status == 'Filled'
+                              ? AppColors.green
+                              : o.status == 'Cancelled'
+                              ? AppColors.red
+                              : AppColors.amber,
+                        ),
+                      ),
+                    ],
                   ),
+                  if (o.status == 'Open') ...[
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () =>
+                          context.read<PortfolioProvider>().cancelOrder(o.id),
+                      child: const FIcon(
+                        Flaticons.closeCircle,
+                        size: 15,
+                        color: AppColors.red,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
-        )
-        .toList();
+      ];
+    }
+
+    final watchPairs = portfolio.watchlistPairs;
+    if (watchPairs.isEmpty) {
+      return [
+        GlassCard(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'Your watchlist is empty. Tap ★ on any pair to save it here.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: p.textMuted),
+          ),
+        ),
+      ];
+    }
+
+    return [
+      for (final item in watchPairs)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: GlassCard(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            onTap: () {
+              context.read<MarketProvider>().selectPair(item);
+              widget.onOpenPair?.call(item);
+            },
+            child: Row(
+              children: [
+                ChainBadge(item.chain, size: 18),
+                const SizedBox(width: 8),
+                TokenAvatar(
+                  symbol: item.base.symbol,
+                  imageUrl: item.base.image,
+                  fallbackColor: chainInfoFor(item.chain).color,
+                  size: 26,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    item.pairLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: p.text,
+                    ),
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      fmtDexPrice(item.price),
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: p.text,
+                      ),
+                    ),
+                    ChangeText(item.change.h24, size: 10.5),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
   }
 }

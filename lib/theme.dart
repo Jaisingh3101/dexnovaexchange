@@ -1,46 +1,43 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-
-final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
-
-void toggleTheme() {
-  final nextDark = themeNotifier.value != ThemeMode.dark;
-  themeNotifier.value = nextDark ? ThemeMode.dark : ThemeMode.light;
-  SystemChrome.setSystemUIOverlayStyle(
-    SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: nextDark ? Brightness.light : Brightness.dark,
-      statusBarBrightness: nextDark ? Brightness.dark : Brightness.light,
-    ),
-  );
-}
+import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  static const bg = Color(0xFF07050F);
-  static const card = Color(0xFF100C1E);
-  static const cardLight = Color(0xFF17122B);
-  static const border = Color(0xFF251C40);
-  static const primary = Color(0xFF7B3FF2);
+  static const bg = Color(0xFF08080A);
+  static const card = Color(0xFF111114);
+  static const cardLight = Color(0xFF18181D);
+  static const border = Color(0xFF23232A);
+  static const primary = Color(0xFF7C3AED);
   static const primaryLight = Color(0xFF9D6BFF);
-  static const primaryDark = Color(0xFF5B21D6);
-  static const green = Color(0xFF16C784);
-  static const red = Color(0xFFEA3943);
+  static const primaryDark = Color(0xFF5B21B6);
+  static const green = Color(0xFF10B981);
+  static const red = Color(0xFFF43F5E);
   static const amber = Color(0xFFF59E0B);
   static const blue = Color(0xFF3B82F6);
-  static const textMuted = Color(0xFF847D9E);
+  static const textMuted = Color(0xFF71717A);
 
   static const primaryGradient = LinearGradient(
-    colors: [Color(0xFF8B4DFF), Color(0xFF5B21D6)],
+    colors: [Color(0xFF8B5CF6), Color(0xFF6D28D9)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const balanceGradient = LinearGradient(
-    colors: [Color(0xFF2A1560), Color(0xFF170D35), Color(0xFF120A28)],
+    colors: [Color(0xFF2E1572), Color(0xFF1A0F3D), Color(0xFF111114)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 }
+
+TextStyle numStyle({
+  double fontSize = 12,
+  FontWeight fontWeight = FontWeight.w700,
+  Color? color,
+}) => GoogleFonts.inter(
+  fontSize: fontSize,
+  fontWeight: fontWeight,
+  color: color,
+  fontFeatures: const [FontFeature.tabularFigures()],
+);
 
 class AppPalette {
   final bool isDark;
@@ -73,18 +70,18 @@ class AppPalette {
 
   static const dark = AppPalette(
     isDark: true,
-    bg: Color(0xFF07050F),
-    bgSecondary: Color(0xFF0B0816),
-    card: Color(0xFF100C1E),
-    cardAlt: Color(0xFF17122B),
-    field: Color(0xFF140F26),
-    border: Color(0xFF251C40),
+    bg: Color(0xFF08080A),
+    bgSecondary: Color(0xFF0C0C0F),
+    card: Color(0xFF111114),
+    cardAlt: Color(0xFF18181D),
+    field: Color(0xFF0D0D11),
+    border: Color(0xFF23232A),
     text: Color(0xFFF8FAFC),
-    textSecondary: Color(0xFFB8B2CC),
-    textMuted: Color(0xFF847D9E),
-    navBg: Color(0xFF0B0816),
+    textSecondary: Color(0xFFA1A1AA),
+    textMuted: Color(0xFF71717A),
+    navBg: Color(0xFF0A0A0D),
     heroGradient: LinearGradient(
-      colors: [Color(0xFF2E1769), Color(0xFF1A0F3D), Color(0xFF120A28)],
+      colors: [Color(0xFF2E1769), Color(0xFF1A0F3D), Color(0xFF111114)],
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
     ),
@@ -92,18 +89,18 @@ class AppPalette {
 
   static const light = AppPalette(
     isDark: false,
-    bg: Color(0xFFF4F6FB),
-    bgSecondary: Color(0xFFECEFF8),
+    bg: Color(0xFFF4F5F9),
+    bgSecondary: Color(0xFFEBEDF5),
     card: Color(0xFFFFFFFF),
-    cardAlt: Color(0xFFF1EFFB),
-    field: Color(0xFFF5F4FA),
-    border: Color(0xFFE2DFF0),
-    text: Color(0xFF120E24),
-    textSecondary: Color(0xFF4B4563),
-    textMuted: Color(0xFF7A7394),
+    cardAlt: Color(0xFFF1F2F8),
+    field: Color(0xFFF7F8FC),
+    border: Color(0xFFE2E4EE),
+    text: Color(0xFF0F172A),
+    textSecondary: Color(0xFF475569),
+    textMuted: Color(0xFF64748B),
     navBg: Color(0xFFFFFFFF),
     heroGradient: LinearGradient(
-      colors: [Color(0xFF6B35E8), Color(0xFF4F22C4), Color(0xFF3E18A3)],
+      colors: [Color(0xFF7C3AED), Color(0xFF5B21B6), Color(0xFF431593)],
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
     ),
@@ -118,8 +115,14 @@ extension AppPaletteContext on BuildContext {
 
 ThemeData _buildWith(AppPalette p, Brightness b) {
   final base = ThemeData(brightness: b, useMaterial3: true);
+  final interTheme = GoogleFonts.interTextTheme(
+    base.textTheme,
+  ).apply(bodyColor: p.text, displayColor: p.text);
+
   return base.copyWith(
     scaffoldBackgroundColor: p.bg,
+    textTheme: interTheme,
+    primaryTextTheme: interTheme,
     visualDensity: VisualDensity.compact,
     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     colorScheme: ColorScheme(
@@ -138,12 +141,12 @@ ThemeData _buildWith(AppPalette p, Brightness b) {
       dense: true,
       minVerticalPadding: 4,
       horizontalTitleGap: 10,
-      titleTextStyle: TextStyle(
-        fontSize: 13.5,
+      titleTextStyle: GoogleFonts.inter(
+        fontSize: 13,
         fontWeight: FontWeight.w600,
         color: p.text,
       ),
-      subtitleTextStyle: TextStyle(fontSize: 11.5, color: p.textMuted),
+      subtitleTextStyle: GoogleFonts.inter(fontSize: 11, color: p.textMuted),
     ),
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
@@ -152,7 +155,7 @@ ThemeData _buildWith(AppPalette p, Brightness b) {
       centerTitle: true,
       toolbarHeight: 46,
       iconTheme: IconThemeData(size: 20, color: p.text),
-      titleTextStyle: TextStyle(
+      titleTextStyle: GoogleFonts.inter(
         fontSize: 15,
         fontWeight: FontWeight.w700,
         color: p.text,
@@ -160,27 +163,27 @@ ThemeData _buildWith(AppPalette p, Brightness b) {
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: AppColors.primaryDark,
-      contentTextStyle: const TextStyle(fontSize: 12.5, color: Colors.white),
+      contentTextStyle: GoogleFonts.inter(fontSize: 12.5, color: Colors.white),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       isDense: true,
       fillColor: p.field,
-      hintStyle: TextStyle(color: p.textMuted, fontSize: 12.5),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      suffixIconConstraints: const BoxConstraints(minHeight: 34, minWidth: 36),
-      prefixIconConstraints: const BoxConstraints(minHeight: 34, minWidth: 36),
+      hintStyle: GoogleFonts.inter(color: p.textMuted, fontSize: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      suffixIconConstraints: const BoxConstraints(minHeight: 32, minWidth: 34),
+      prefixIconConstraints: const BoxConstraints(minHeight: 32, minWidth: 34),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(9),
         borderSide: BorderSide(color: p.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(9),
         borderSide: BorderSide(color: p.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(9),
         borderSide: const BorderSide(color: AppColors.primary),
       ),
     ),

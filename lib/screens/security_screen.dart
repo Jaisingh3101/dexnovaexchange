@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/wallet_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/flaticon.dart';
+import '../widgets/wallet_switcher.dart';
 import 'create_wallet_screen.dart';
 import 'recovery_phrase_screen.dart';
 
@@ -15,12 +18,21 @@ class _SecurityScreenState extends State<SecurityScreen> {
   bool twoFa = true;
   bool biometric = true;
 
+  void _openWalletSetup(int tab) => Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => CreateWalletScreen(initialTab: tab)),
+  );
+
   @override
   Widget build(BuildContext context) {
     final p = context.pal;
+    final walletProv = context.watch<WalletProvider>();
+    final wallets = walletProv.wallets;
+    final wallet = walletProv.activeWallet;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Security'),
+        title: const Text('Security & Settings'),
         actions: const [
           Padding(
             padding: EdgeInsets.only(right: 12),
@@ -35,21 +47,6 @@ class _SecurityScreenState extends State<SecurityScreen> {
             padding: EdgeInsets.zero,
             child: Column(
               children: [
-                _tile(
-                  p: p,
-                  icon: Flaticons.lock,
-                  color: AppColors.primaryLight,
-                  title: 'Change Password',
-                  sub: '••••••••',
-                  subColor: p.textMuted,
-                  trailing: FIcon(
-                    Flaticons.chevronRight,
-                    size: 15,
-                    color: p.textMuted,
-                  ),
-                  onTap: () => showToast(context, 'Change password'),
-                ),
-                _div(p),
                 _tile(
                   p: p,
                   icon: Flaticons.shieldCheck,
@@ -77,9 +74,9 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   icon: Flaticons.key,
                   color: AppColors.green,
                   title: 'Recovery Phrase',
-                  sub: 'Backup Complete',
-                  subColor: AppColors.green,
-                  trailing: _check(true),
+                  sub: wallet != null ? 'Backed Up' : 'View / Backup Seed',
+                  subColor: wallet != null ? AppColors.green : p.textMuted,
+                  trailing: _check(wallet != null),
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -93,19 +90,18 @@ class _SecurityScreenState extends State<SecurityScreen> {
                   icon: Flaticons.recoverWallet,
                   color: AppColors.blue,
                   title: 'Create / Recover Wallet',
-                  sub: 'Import or generate seed',
-                  subColor: p.textMuted,
+                  sub: wallet != null
+                      ? '${wallet.name} • ${wallet.shortEth} (${wallets.length})'
+                      : '${wallets.length} wallets • Tap to setup',
+                  subColor: wallet != null ? AppColors.green : p.textMuted,
                   trailing: FIcon(
                     Flaticons.chevronRight,
                     size: 15,
                     color: p.textMuted,
                   ),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateWalletScreen(initialTab: 0),
-                    ),
-                  ),
+                  onTap: () => wallets.isNotEmpty
+                      ? showWalletSwitcherSheet(context)
+                      : _openWalletSetup(0),
                 ),
               ],
             ),
@@ -117,9 +113,9 @@ class _SecurityScreenState extends State<SecurityScreen> {
               children: [
                 Row(
                   children: [
-                    const FBadgeIcon(
-                      Flaticons.shieldCheck,
-                      color: AppColors.blue,
+                    FBadgeIcon(
+                      wallet != null ? Flaticons.wallet : Flaticons.shieldCheck,
+                      color: wallet != null ? AppColors.green : AppColors.blue,
                       size: 36,
                       iconSize: 20,
                     ),
@@ -129,7 +125,9 @@ class _SecurityScreenState extends State<SecurityScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Connect to Trust Wallet',
+                            wallet != null
+                                ? '${wallet.name} Connected'
+                                : 'Connect Web3 Wallet',
                             style: TextStyle(
                               fontSize: 13.5,
                               fontWeight: FontWeight.w600,
@@ -138,7 +136,9 @@ class _SecurityScreenState extends State<SecurityScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Manage your assets with Trust Wallet',
+                            wallet != null
+                                ? '${wallet.shortEth} • ${wallets.length} ${wallets.length == 1 ? 'Wallet' : 'Wallets'}'
+                                : 'Create a new wallet or recover with seed phrase',
                             style: TextStyle(
                               fontSize: 11.5,
                               color: p.textMuted,
@@ -151,9 +151,43 @@ class _SecurityScreenState extends State<SecurityScreen> {
                 ),
                 const SizedBox(height: 10),
                 GradientButton(
-                  label: 'Connect Wallet',
+                  label: wallets.isNotEmpty
+                      ? 'Manage / Switch Wallet'
+                      : 'Connect Wallet',
+                  icon: Flaticons.addWallet,
                   height: 38,
-                  onPressed: () => showToast(context, 'Connecting wallet...'),
+                  onPressed: () => wallets.isNotEmpty
+                      ? showWalletSwitcherSheet(context)
+                      : _openWalletSetup(0),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GradientButton(
+                        label: 'Recover Seed',
+                        icon: Flaticons.recoverWallet,
+                        outlined: true,
+                        height: 34,
+                        onPressed: () => _openWalletSetup(1),
+                      ),
+                    ),
+                    if (wallet != null) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GradientButton(
+                          label: 'Disconnect',
+                          icon: Flaticons.closeCircle,
+                          outlined: true,
+                          height: 34,
+                          onPressed: () {
+                            context.read<WalletProvider>().disconnectWallet();
+                            showToast(context, 'Wallet disconnected');
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 6),
                 ListTile(

@@ -1,46 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/flaticon.dart';
+import 'alerts_screen.dart';
 import 'create_wallet_screen.dart';
-import 'dapp_browser_screen.dart';
-import 'deposit_screen.dart';
-import 'earn_screen.dart';
-import 'nft_gallery_screen.dart';
+import 'multicharts_screen.dart';
 import 'onboarding_screen.dart';
 import 'recovery_phrase_screen.dart';
 import 'security_screen.dart';
-import 'send_receive_screen.dart';
 import 'splash_screen.dart';
 import 'swap_bridge_screen.dart';
-import 'token_manager_screen.dart';
-import 'withdraw_screen.dart';
+import 'watchlist_screen.dart';
 
 List<(Flaticons, String, Color, Widget)> moreItems() => [
   (
     Flaticons.trade,
-    'DEX Swap & Bridge',
+    'Convert & Swap',
     AppColors.primaryLight,
     const SwapBridgeScreen(),
   ),
-  (
-    Flaticons.network,
-    'DApp Browser',
-    AppColors.blue,
-    const DappBrowserScreen(),
-  ),
-  (
-    Flaticons.sparkles,
-    'NFTs & DeFi',
-    AppColors.amber,
-    const NftGalleryScreen(),
-  ),
-  (
-    Flaticons.settings,
-    'Tokens & Networks',
-    AppColors.green,
-    const TokenManagerScreen(),
-  ),
+  (Flaticons.starFilled, 'Watchlist', AppColors.amber, const WatchlistScreen()),
+  (Flaticons.bell, 'Price Alerts', AppColors.red, const AlertsScreen()),
+  (Flaticons.candles, 'Multicharts', AppColors.blue, const MultichartsScreen()),
   (
     Flaticons.addWallet,
     'Create Wallet',
@@ -54,32 +37,12 @@ List<(Flaticons, String, Color, Widget)> moreItems() => [
     const CreateWalletScreen(initialTab: 1),
   ),
   (
-    Flaticons.send,
-    'Send',
-    AppColors.green,
-    const SendReceiveScreen(initialTab: 0),
-  ),
-  (
-    Flaticons.receive,
-    'Receive',
-    AppColors.amber,
-    const SendReceiveScreen(initialTab: 1),
-  ),
-  (Flaticons.deposit, 'Deposit', AppColors.primaryLight, const DepositScreen()),
-  (Flaticons.withdraw, 'Withdraw', AppColors.red, const WithdrawScreen()),
-  (
     Flaticons.key,
     'Recovery Phrase',
     AppColors.amber,
     const RecoveryPhraseScreen(),
   ),
   (Flaticons.shieldCheck, 'Security', AppColors.green, const SecurityScreen()),
-  (
-    Flaticons.earn,
-    'Earn',
-    AppColors.primaryLight,
-    const Scaffold(body: SafeArea(child: EarnScreen())),
-  ),
   (
     Flaticons.lock,
     'Splash & Lock',
@@ -100,20 +63,23 @@ class MoreScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.pal;
+    final themeProv = context.watch<ThemeProvider>();
     final items = moreItems();
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
         children: [
-          const SectionTitle('More & Web3 Hub'),
+          const SectionTitle('More & Tools'),
           GlassCard(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            onTap: toggleTheme,
+            onTap: () => context.read<ThemeProvider>().toggleTheme(),
             child: Row(
               children: [
                 FBadgeIcon(
-                  p.isDark ? Flaticons.moon : Flaticons.sun,
-                  color: p.isDark ? AppColors.primaryLight : AppColors.amber,
+                  themeProv.isDark ? Flaticons.moon : Flaticons.sun,
+                  color: themeProv.isDark
+                      ? AppColors.primaryLight
+                      : AppColors.amber,
                   size: 32,
                   iconSize: 16,
                 ),
@@ -131,7 +97,9 @@ class MoreScreen extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        p.isDark ? 'Dark Theme active' : 'Light Theme active',
+                        themeProv.isDark
+                            ? 'Dark Theme active'
+                            : 'Light Theme active',
                         style: TextStyle(fontSize: 11, color: p.textMuted),
                       ),
                     ],

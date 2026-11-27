@@ -1,5 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import '../data.dart';
+import 'package:provider/provider.dart';
+import '../models/dex_models.dart';
+import '../providers/market_provider.dart';
+import '../providers/portfolio_provider.dart';
+import '../providers/theme_provider.dart';
+import '../services/api_service.dart';
 import '../theme.dart';
 import 'flaticon.dart';
 
@@ -126,9 +132,10 @@ class ThemeToggleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.pal;
-    final isDark = p.isDark;
+    final themeProv = context.watch<ThemeProvider>();
+    final isDark = themeProv.isDark;
     return GestureDetector(
-      onTap: toggleTheme,
+      onTap: () => context.read<ThemeProvider>().toggleTheme(),
       child: Container(
         height: 30,
         padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10),
@@ -163,39 +170,88 @@ class ThemeToggleButton extends StatelessWidget {
   }
 }
 
-class CoinIcon extends StatelessWidget {
-  final Coin coin;
+class TokenAvatar extends StatelessWidget {
+  final String symbol;
+  final String? imageUrl;
+  final Color fallbackColor;
   final double size;
-  const CoinIcon(this.coin, {super.key, this.size = 28});
+
+  const TokenAvatar({
+    super.key,
+    required this.symbol,
+    this.imageUrl,
+    this.fallbackColor = AppColors.primary,
+    this.size = 28,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final isSol = coin.symbol == 'SOL';
-    return Container(
+    final letter = symbol.isNotEmpty ? symbol[0].toUpperCase() : '?';
+    final fallback = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: isSol ? Colors.black : coin.color,
-        gradient: isSol
-            ? const LinearGradient(
-                colors: [Color(0xFF9945FF), Color(0xFF14F195)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : null,
+        color: fallbackColor.withValues(alpha: 0.2),
+        border: Border.all(color: fallbackColor.withValues(alpha: 0.5)),
       ),
       child: Center(
-        child: coin.symbol == 'USDT'
-            ? Text(
-                '₮',
-                style: TextStyle(
-                  fontSize: size * 0.55,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              )
-            : Icon(coin.icon, size: size * 0.58, color: Colors.white),
+        child: Text(
+          letter,
+          style: TextStyle(
+            fontSize: size * 0.44,
+            fontWeight: FontWeight.w800,
+            color: fallbackColor,
+          ),
+        ),
+      ),
+    );
+
+    if (!enableNetworkImages ||
+        imageUrl == null ||
+        imageUrl!.isEmpty ||
+        !imageUrl!.startsWith('http')) {
+      return fallback;
+    }
+
+    return ClipOval(
+      child: Image.network(
+        imageUrl!,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+      ),
+    );
+  }
+}
+
+class ChainBadge extends StatelessWidget {
+  final String chainSlug;
+  final double size;
+  const ChainBadge(this.chainSlug, {super.key, this.size = 18});
+
+  @override
+  Widget build(BuildContext context) {
+    final info = chainInfoFor(chainSlug);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: info.color,
+        borderRadius: BorderRadius.circular(size * 0.28),
+      ),
+      child: Center(
+        child: Text(
+          info.badgeChar,
+          style: TextStyle(
+            fontSize: size * 0.56,
+            fontWeight: FontWeight.w800,
+            color: info.color.computeLuminance() > 0.65
+                ? Colors.black
+                : Colors.white,
+          ),
+        ),
       ),
     );
   }
@@ -238,85 +294,6 @@ class FieldLabel extends StatelessWidget {
   );
 }
 
-/// Dropdown-looking selector that opens a bottom sheet.
-class SelectorTile extends StatelessWidget {
-  final Widget leading;
-  final String title;
-  final String? subtitle;
-  final VoidCallback onTap;
-  final Flaticons trailing;
-
-  const SelectorTile({
-    super.key,
-    required this.leading,
-    required this.title,
-    this.subtitle,
-    required this.onTap,
-    this.trailing = Flaticons.chevronDown,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.pal;
-    return GlassCard(
-      onTap: onTap,
-      radius: 10,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      child: Row(
-        children: [
-          leading,
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: p.text,
-              ),
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(
-                subtitle!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11.5, color: p.textMuted),
-              ),
-            ),
-          ],
-          const Spacer(),
-          FIcon(trailing, color: p.textSecondary, size: 16),
-        ],
-      ),
-    );
-  }
-}
-
-class TronIcon extends StatelessWidget {
-  final double size;
-  const TronIcon({super.key, this.size = 24});
-  @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: const Color(0xFFEF0027).withValues(alpha: 0.14),
-    ),
-    child: Icon(
-      Icons.change_history,
-      color: const Color(0xFFEF0027),
-      size: size * 0.58,
-    ),
-  );
-}
-
-/// Compact section header used across screens.
 class SectionTitle extends StatelessWidget {
   final String text;
   final Widget? trailing;
@@ -326,103 +303,22 @@ class SectionTitle extends StatelessWidget {
     padding: const EdgeInsets.fromLTRB(2, 2, 2, 8),
     child: Row(
       children: [
-        Text(
-          text,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: context.pal.text,
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: context.pal.text,
+            ),
           ),
         ),
         const Spacer(),
         ?trailing,
       ],
     ),
-  );
-}
-
-Widget _sheet(BuildContext context, String title, List<Widget> children) {
-  final p = context.pal;
-  return SafeArea(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Center(
-          child: Container(
-            margin: const EdgeInsets.only(top: 8),
-            width: 34,
-            height: 4,
-            decoration: BoxDecoration(
-              color: p.border,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: 14.5,
-              fontWeight: FontWeight.w700,
-              color: p.text,
-            ),
-          ),
-        ),
-        ...children,
-        const SizedBox(height: 6),
-      ],
-    ),
-  );
-}
-
-Future<Coin?> pickCoin(BuildContext context) {
-  return showModalBottomSheet<Coin>(
-    context: context,
-    backgroundColor: context.pal.card,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
-    builder: (ctx) => _sheet(ctx, 'Select Coin', [
-      for (final c in coins.take(5))
-        ListTile(
-          leading: CoinIcon(c, size: 26),
-          title: Text(c.symbol),
-          subtitle: Text(c.name),
-          trailing: Text(
-            '\$${fmtUsd(c.price)}',
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: ctx.pal.text,
-            ),
-          ),
-          onTap: () => Navigator.pop(ctx, c),
-        ),
-    ]),
-  );
-}
-
-Future<String?> pickNetwork(BuildContext context) {
-  return showModalBottomSheet<String>(
-    context: context,
-    backgroundColor: context.pal.card,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
-    builder: (ctx) => _sheet(ctx, 'Select Network', [
-      for (final n in networks)
-        ListTile(
-          leading: const FIcon(
-            Flaticons.network,
-            size: 18,
-            color: AppColors.primaryLight,
-          ),
-          title: Text(n),
-          onTap: () => Navigator.pop(ctx, n),
-        ),
-    ]),
   );
 }
 
@@ -440,7 +336,366 @@ void showToast(BuildContext context, String msg) {
     );
 }
 
-/// 3D faceted hexagonal DexNova "D" emblem on a glowing gradient squircle.
+Future<void> showLivePairPickerSheet(
+  BuildContext context,
+  ValueChanged<DexPair> onPick,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: context.pal.card,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (ctx) => _LivePairPickerSheet(onPick: onPick),
+  );
+}
+
+class _LivePairPickerSheet extends StatefulWidget {
+  final ValueChanged<DexPair> onPick;
+  const _LivePairPickerSheet({required this.onPick});
+
+  @override
+  State<_LivePairPickerSheet> createState() => _LivePairPickerSheetState();
+}
+
+class _LivePairPickerSheetState extends State<_LivePairPickerSheet> {
+  final ctrl = TextEditingController();
+  Timer? _debounce;
+  late List<DexPair> results = context.read<MarketProvider>().trendingPools;
+  bool loading = false;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onSearch(String q) {
+    _debounce?.cancel();
+    final clean = q.trim();
+    if (clean.length < 2) {
+      setState(() {
+        results = context.read<MarketProvider>().trendingPools;
+        loading = false;
+      });
+      return;
+    }
+    setState(() => loading = true);
+    _debounce = Timer(const Duration(milliseconds: 280), () async {
+      final list = await context.read<MarketProvider>().searchPairs(clean);
+      if (!mounted) return;
+      setState(() {
+        results = list;
+        loading = false;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.pal;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(12, 10, 12, 12 + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 34,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: p.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Select Live DEX Pair',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: p.text,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ctrl,
+              onChanged: _onSearch,
+              style: TextStyle(fontSize: 13, color: p.text),
+              decoration: InputDecoration(
+                hintText: 'Search symbol, pair or contract address…',
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.all(9),
+                  child: FIcon(Flaticons.search, size: 15, color: p.textMuted),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: loading
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : results.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Text(
+                          'No matching pairs found',
+                          style: TextStyle(fontSize: 12.5, color: p.textMuted),
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: results.length.clamp(0, 20),
+                      separatorBuilder: (_, _) =>
+                          Divider(height: 1, color: p.border),
+                      itemBuilder: (_, i) {
+                        final item = results[i];
+                        final ci = chainInfoFor(item.chain);
+                        final up = item.change.h24 >= 0;
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 2,
+                          ),
+                          leading: TokenAvatar(
+                            symbol: item.base.symbol,
+                            imageUrl: item.base.image,
+                            fallbackColor: ci.color,
+                            size: 30,
+                          ),
+                          title: Row(
+                            children: [
+                              ChainBadge(item.chain, size: 15),
+                              const SizedBox(width: 5),
+                              Flexible(
+                                child: Text(
+                                  item.pairLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: p.text,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Text(
+                            '${ci.name} · Liq ${fmtCompactUsd(item.liquidity, decimals: 1)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: p.textMuted),
+                          ),
+                          trailing: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                fmtDexPrice(item.price),
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: p.text,
+                                ),
+                              ),
+                              Text(
+                                '${up ? '+' : ''}${item.change.h24.toStringAsFixed(2)}%',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: up ? AppColors.green : AppColors.red,
+                                ),
+                              ),
+                            ],
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            widget.onPick(item);
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> showPriceAlertDialog(BuildContext context, DexPair pair) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => _PriceAlertDialog(pair: pair),
+  );
+}
+
+class _PriceAlertDialog extends StatefulWidget {
+  final DexPair pair;
+  const _PriceAlertDialog({required this.pair});
+
+  @override
+  State<_PriceAlertDialog> createState() => _PriceAlertDialogState();
+}
+
+class _PriceAlertDialogState extends State<_PriceAlertDialog> {
+  bool above = true;
+  late final targetCtrl = TextEditingController(
+    text: (widget.pair.price * 1.05).toStringAsPrecision(5),
+  );
+
+  @override
+  void dispose() {
+    targetCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.pal;
+    return AlertDialog(
+      backgroundColor: p.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: p.border),
+      ),
+      title: Text(
+        'Price Alert · ${widget.pair.pairLabel}',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: p.text,
+        ),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Current price: ${fmtDexPrice(widget.pair.price)}',
+              style: TextStyle(fontSize: 12, color: p.textSecondary),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => above = true),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: above ? AppColors.green : p.field,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: above ? AppColors.green : p.border,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '▲ Above',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: above ? Colors.black : p.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => above = false),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: !above ? AppColors.red : p.field,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: !above ? AppColors.red : p.border,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '▼ Below',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: !above ? Colors.white : p.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: targetCtrl,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              style: TextStyle(fontSize: 13, color: p.text),
+              decoration: const InputDecoration(
+                labelText: 'Target Price (USD)',
+                suffixText: 'USD',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () {
+            final target = double.tryParse(targetCtrl.text.trim()) ?? 0;
+            if (target <= 0) {
+              showToast(context, 'Enter a valid target price');
+              return;
+            }
+            context.read<PortfolioProvider>().addAlert(
+              pair: widget.pair,
+              above: above,
+              target: target,
+            );
+            Navigator.pop(context);
+            showToast(
+              context,
+              'Alert set: ${widget.pair.pairLabel} ${above ? 'above' : 'below'} ${fmtDexPrice(target)}',
+            );
+          },
+          child: const Text('Create Alert'),
+        ),
+      ],
+    );
+  }
+}
+
+/// HyperDEX metallic/emerald "#" brand icon backed by asset PNG.
 class DexNovaLogo extends StatelessWidget {
   final double size;
   final bool showBadge;
@@ -448,115 +703,66 @@ class DexNovaLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mark = SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(painter: _DexNovaLogoPainter(showBadge)),
+    final radius = BorderRadius.circular(size * 0.27);
+    final img = ClipRRect(
+      borderRadius: radius,
+      child: Image.asset(
+        'assets/hyperdex_icon.png',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.high,
+      ),
     );
-    if (!showBadge) return mark;
+    if (!showBadge) return img;
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(size * 0.27),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF2E1572), Color(0xFF140933)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: const Color(0xFF0D1211),
+        borderRadius: radius,
         border: Border.all(
-          color: AppColors.primaryLight.withValues(alpha: 0.45),
-          width: (size * 0.035).clamp(1.0, 2.2),
+          color: AppColors.green.withValues(alpha: 0.35),
+          width: (size * 0.032).clamp(0.8, 1.8),
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.35),
-            blurRadius: size * 0.32,
-            offset: Offset(0, size * 0.08),
+            color: AppColors.green.withValues(alpha: 0.2),
+            blurRadius: size * 0.28,
+            offset: Offset(0, size * 0.06),
           ),
         ],
       ),
-      child: CustomPaint(painter: _DexNovaLogoPainter(true)),
+      child: img,
     );
   }
 }
 
-class _DexNovaLogoPainter extends CustomPainter {
-  final bool framed;
-  _DexNovaLogoPainter(this.framed);
+/// Full HyperDEX "# HYPER DEX" horizontal wordmark badge.
+class HyperDexWordmark extends StatelessWidget {
+  final double height;
+  const HyperDexWordmark({super.key, this.height = 30});
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final s = size.shortestSide;
-    final pad = framed ? s * 0.17 : s * 0.04;
-    final w = s - pad * 2;
-    final h = s - pad * 2;
-    Offset p(double x, double y) => Offset(pad + w * x, pad + h * y);
-
-    final outer = Path()
-      ..moveTo(p(0.14, 0.04).dx, p(0.14, 0.04).dy)
-      ..lineTo(p(0.62, 0.04).dx, p(0.62, 0.04).dy)
-      ..lineTo(p(0.95, 0.30).dx, p(0.95, 0.30).dy)
-      ..lineTo(p(0.95, 0.70).dx, p(0.95, 0.70).dy)
-      ..lineTo(p(0.62, 0.96).dx, p(0.62, 0.96).dy)
-      ..lineTo(p(0.06, 0.96).dx, p(0.06, 0.96).dy)
-      ..lineTo(p(0.24, 0.74).dx, p(0.24, 0.74).dy)
-      ..lineTo(p(0.24, 0.26).dx, p(0.24, 0.26).dy)
-      ..close();
-
-    final inner = Path()
-      ..moveTo(p(0.45, 0.28).dx, p(0.45, 0.28).dy)
-      ..lineTo(p(0.60, 0.28).dx, p(0.60, 0.28).dy)
-      ..lineTo(p(0.74, 0.40).dx, p(0.74, 0.40).dy)
-      ..lineTo(p(0.74, 0.60).dx, p(0.74, 0.60).dy)
-      ..lineTo(p(0.60, 0.72).dx, p(0.60, 0.72).dy)
-      ..lineTo(p(0.45, 0.72).dx, p(0.45, 0.72).dy)
-      ..close();
-
-    final body = Path.combine(PathOperation.difference, outer, inner);
-    canvas.drawShadow(body, const Color(0xFF4F7BFF), s * 0.14, false);
-    canvas.drawPath(
-      body,
-      Paint()
-        ..shader = const LinearGradient(
-          colors: [Color(0xFF38BDF8), Color(0xFF7B3FF2), Color(0xFF5B21D6)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ).createShader(Rect.fromLTWH(pad, pad, w, h)),
-    );
-
-    // Top-right specular facet for 3D prism depth
-    final topFacet = Path()
-      ..moveTo(p(0.14, 0.04).dx, p(0.14, 0.04).dy)
-      ..lineTo(p(0.62, 0.04).dx, p(0.62, 0.04).dy)
-      ..lineTo(p(0.95, 0.30).dx, p(0.95, 0.30).dy)
-      ..lineTo(p(0.74, 0.40).dx, p(0.74, 0.40).dy)
-      ..lineTo(p(0.60, 0.28).dx, p(0.60, 0.28).dy)
-      ..lineTo(p(0.24, 0.26).dx, p(0.24, 0.26).dy)
-      ..close();
-    canvas.drawPath(
-      topFacet,
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            const Color(0xFF14F195).withValues(alpha: 0.48),
-            const Color(0xFF60A5FA).withValues(alpha: 0.22),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ).createShader(Rect.fromLTWH(pad, pad, w, h)),
-    );
-
-    // Crisp bottom highlight edge
-    canvas.drawPath(
-      body,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.28)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = (s * 0.025).clamp(0.7, 1.8),
+  Widget build(BuildContext context) {
+    final r = BorderRadius.circular(8);
+    return Container(
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111015),
+        borderRadius: r,
+        border: Border.all(color: AppColors.green.withValues(alpha: 0.25)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.asset(
+          'assets/hyperdex_logo.png',
+          height: height - 4,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
+      ),
     );
   }
-
-  @override
-  bool shouldRepaint(covariant _DexNovaLogoPainter old) => old.framed != framed;
 }

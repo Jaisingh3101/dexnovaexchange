@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../data.dart';
+import '../models/dex_models.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/flaticon.dart';
@@ -81,9 +81,40 @@ class _SplashScreenState extends State<SplashScreen> {
                       ),
                       const SizedBox(width: 8),
                     ],
-                    _modeSwitcher(p),
-                    const Spacer(),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: _modeSwitcher(p),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     const ThemeToggleButton(compact: true),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: _enterApp,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: p.cardAlt,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: p.border),
+                        ),
+                        child: Text(
+                          'Skip',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: p.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -141,19 +172,19 @@ class _SplashScreenState extends State<SplashScreen> {
         Flaticons.shieldCheck,
         AppColors.green,
         'Self-Custody & BIP-39 Seed',
-        'Keys encrypted locally, non-custodial vault',
+        'Keys encrypted locally, multi-wallet HD vault',
       ),
       (
         Flaticons.trade,
         AppColors.primaryLight,
-        'Cross-Chain DEX Aggregator',
-        'Best swap rates across 1inch, Uniswap & Raydium',
+        'Live On-Chain DEX & Convert',
+        'Real-time pools, OHLCV charts & instant swap across 18 chains',
       ),
       (
-        Flaticons.network,
+        Flaticons.candles,
         AppColors.blue,
-        'Web3 DApp Browser & WalletConnect v2',
-        '1-tap DApp signing, NFTs & custom RPC gas tracker',
+        'Multicharts, Watchlist & Alerts',
+        'Track live tokens, compare up to 4 charts & set price alerts',
       ),
     ];
 
@@ -166,27 +197,27 @@ class _SplashScreenState extends State<SplashScreen> {
             height: 82,
             child: Stack(
               alignment: Alignment.center,
-              children: [
-                const DexNovaLogo(size: 72),
+              children: const [
+                DexNovaLogo(size: 72),
                 Positioned(
                   left: 4,
                   top: 8,
-                  child: CoinIcon(coins[1], size: 22),
+                  child: ChainBadge('ethereum', size: 22),
                 ),
                 Positioned(
                   right: 4,
                   top: 8,
-                  child: CoinIcon(coins[2], size: 22),
+                  child: ChainBadge('bsc', size: 22),
                 ),
                 Positioned(
                   left: 12,
                   bottom: 4,
-                  child: CoinIcon(coins[4], size: 20),
+                  child: ChainBadge('solana', size: 20),
                 ),
                 Positioned(
                   right: 12,
                   bottom: 4,
-                  child: CoinIcon(coins[0], size: 20),
+                  child: ChainBadge('base', size: 20),
                 ),
               ],
             ),
@@ -194,7 +225,7 @@ class _SplashScreenState extends State<SplashScreen> {
         ),
         const SizedBox(height: 12),
         Text(
-          'DexNova',
+          'HyperDEX',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 24,
@@ -214,14 +245,7 @@ class _SplashScreenState extends State<SplashScreen> {
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
-              for (final chain in const [
-                'Ethereum',
-                'Bitcoin',
-                'Solana',
-                'BNB Chain',
-                'Polygon',
-                'Tron',
-              ])
+              for (final chain in kDexChains.values.take(8))
                 Container(
                   margin: const EdgeInsets.only(right: 6),
                   padding: const EdgeInsets.symmetric(
@@ -233,13 +257,27 @@ class _SplashScreenState extends State<SplashScreen> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: p.border),
                   ),
-                  child: Text(
-                    chain,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      color: p.textSecondary,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: chain.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        chain.name,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: p.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
@@ -280,7 +318,7 @@ class _SplashScreenState extends State<SplashScreen> {
           ),
         const SizedBox(height: 10),
         GradientButton(
-          label: 'Enter DexNova Exchange',
+          label: 'Enter HyperDEX Exchange',
           icon: Flaticons.arrowRight,
           onPressed: _enterApp,
         ),
@@ -309,7 +347,10 @@ class _SplashScreenState extends State<SplashScreen> {
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const CreateWalletScreen(initialTab: 0),
+                    builder: (_) => CreateWalletScreen(
+                      initialTab: 0,
+                      enterShellOnComplete: !widget.isPreview,
+                    ),
                   ),
                 ),
               ),
@@ -324,7 +365,10 @@ class _SplashScreenState extends State<SplashScreen> {
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const CreateWalletScreen(initialTab: 1),
+                    builder: (_) => CreateWalletScreen(
+                      initialTab: 1,
+                      enterShellOnComplete: !widget.isPreview,
+                    ),
                   ),
                 ),
               ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../data.dart';
+import 'package:provider/provider.dart';
+import '../providers/wallet_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/flaticon.dart';
@@ -19,6 +20,8 @@ class _RecoveryPhraseScreenState extends State<RecoveryPhraseScreen> {
   @override
   Widget build(BuildContext context) {
     final p = context.pal;
+    final words = context.watch<WalletProvider>().activeWallet?.mnemonic;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Recovery Phrase'),
@@ -53,187 +56,210 @@ class _RecoveryPhraseScreenState extends State<RecoveryPhraseScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            'Backup Your Recovery Phrase',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w700,
-              color: p.text,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'This 12-word phrase is the only way to recover your wallet. Keep it safe and never share it.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11.5, color: p.textMuted, height: 1.35),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.amber.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: AppColors.amber.withValues(alpha: 0.35),
+          if (words == null || words.isEmpty) ...[
+            Text(
+              'No Recovery Phrase Active',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15.5,
+                fontWeight: FontWeight.w700,
+                color: p.text,
               ),
             ),
-            child: Row(
-              children: [
-                const FIcon(
-                  Flaticons.warning,
-                  size: 15,
-                  color: AppColors.amber,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Do not screenshot or store in cloud notes.',
-                    style: TextStyle(fontSize: 11.5, color: p.text),
-                  ),
-                ),
-              ],
+            const SizedBox(height: 5),
+            Text(
+              'Create or recover a BIP-39 wallet to view and back up your secret phrase.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: p.textMuted, height: 1.35),
             ),
-          ),
-          const SizedBox(height: 10),
-          GlassCard(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '12-Word Secret Key',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: p.textSecondary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: () => setState(() => hidden = !hidden),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: p.cardAlt,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: p.border),
-                        ),
-                        child: Row(
-                          children: [
-                            FIcon(
-                              hidden ? Flaticons.eye : Flaticons.eyeOff,
-                              size: 12,
-                              color: AppColors.primaryLight,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              hidden ? 'Reveal' : 'Hide',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: p.text,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: () {
-                        Clipboard.setData(
-                          ClipboardData(text: recoveryWords.join(' ')),
-                        );
-                        showToast(context, 'Recovery phrase copied');
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: p.cardAlt,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: p.border),
-                        ),
-                        child: Row(
-                          children: [
-                            const FIcon(
-                              Flaticons.copy,
-                              size: 12,
-                              color: AppColors.primaryLight,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Copy',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: p.text,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+            const SizedBox(height: 14),
+          ] else ...[
+            Text(
+              'Backup Your Recovery Phrase',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15.5,
+                fontWeight: FontWeight.w700,
+                color: p.text,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'This ${words.length}-word phrase is the only way to recover your wallet. Keep it safe and never share it.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: p.textMuted,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.amber.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.amber.withValues(alpha: 0.35),
                 ),
-                const SizedBox(height: 8),
-                GridView.count(
-                  crossAxisCount: 3,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 6,
-                  crossAxisSpacing: 6,
-                  childAspectRatio: 3.1,
-                  children: [
-                    for (var i = 0; i < recoveryWords.length; i++)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        decoration: BoxDecoration(
-                          color: p.field,
-                          borderRadius: BorderRadius.circular(7),
-                          border: Border.all(color: p.border),
-                        ),
-                        child: Center(
-                          child: Text(
-                            hidden
-                                ? '${i + 1}. ••••'
-                                : '${i + 1}. ${recoveryWords[i]}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                              color: p.text,
-                            ),
+              ),
+              child: Row(
+                children: [
+                  const FIcon(
+                    Flaticons.warning,
+                    size: 15,
+                    color: AppColors.amber,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Do not screenshot or store in cloud notes.',
+                      style: TextStyle(fontSize: 11.5, color: p.text),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            GlassCard(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${words.length}-Word Secret Key',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: p.textSecondary,
                           ),
                         ),
                       ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () => setState(() => hidden = !hidden),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: p.cardAlt,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: p.border),
+                          ),
+                          child: Row(
+                            children: [
+                              FIcon(
+                                hidden ? Flaticons.eye : Flaticons.eyeOff,
+                                size: 12,
+                                color: AppColors.primaryLight,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                hidden ? 'Reveal' : 'Hide',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: p.text,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(
+                            ClipboardData(text: words.join(' ')),
+                          );
+                          showToast(context, 'Recovery phrase copied');
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: p.cardAlt,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: p.border),
+                          ),
+                          child: Row(
+                            children: [
+                              const FIcon(
+                                Flaticons.copy,
+                                size: 12,
+                                color: AppColors.primaryLight,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Copy',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: p.text,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  GridView.count(
+                    crossAxisCount: 3,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 6,
+                    crossAxisSpacing: 6,
+                    childAspectRatio: 3.1,
+                    children: [
+                      for (var i = 0; i < words.length; i++)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: BoxDecoration(
+                            color: p.field,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: p.border),
+                          ),
+                          child: Center(
+                            child: Text(
+                              hidden
+                                  ? '${i + 1}. ••••'
+                                  : '${i + 1}. ${words[i]}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: p.text,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          GradientButton(
-            label: "I've Backed It Up",
-            icon: Flaticons.checkCircle,
-            onPressed: () {
-              showToast(context, 'Recovery phrase backup complete');
-              Navigator.pop(context);
-            },
-          ),
-          const SizedBox(height: 10),
+            const SizedBox(height: 14),
+            GradientButton(
+              label: "I've Backed It Up",
+              icon: Flaticons.checkCircle,
+              onPressed: () {
+                showToast(context, 'Recovery phrase backup complete');
+                Navigator.pop(context);
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
           Row(
             children: [
               Expanded(

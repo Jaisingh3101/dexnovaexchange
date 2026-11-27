@@ -1,20 +1,36 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../data.dart';
+import '../models/dex_models.dart';
 import '../theme.dart';
 
 class CandleChart extends StatelessWidget {
-  final List<Candle> candles;
+  final List<DexCandle> candles;
   final bool twoMa;
-  const CandleChart({super.key, required this.candles, this.twoMa = false});
+  final bool lineMode;
+
+  const CandleChart({
+    super.key,
+    required this.candles,
+    this.twoMa = false,
+    this.lineMode = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final p = context.pal;
+    if (candles.isEmpty) {
+      return Center(
+        child: Text(
+          'Loading live candles…',
+          style: TextStyle(fontSize: 12, color: p.textMuted),
+        ),
+      );
+    }
     return CustomPaint(
       painter: _CandlePainter(
         candles,
         twoMa,
+        lineMode,
         isDark: p.isDark,
         textColor: p.textMuted,
       ),
@@ -24,14 +40,16 @@ class CandleChart extends StatelessWidget {
 }
 
 class _CandlePainter extends CustomPainter {
-  final List<Candle> candles;
+  final List<DexCandle> candles;
   final bool twoMa;
+  final bool lineMode;
   final bool isDark;
   final Color textColor;
 
   _CandlePainter(
     this.candles,
-    this.twoMa, {
+    this.twoMa,
+    this.lineMode, {
     required this.isDark,
     required this.textColor,
   });
@@ -50,80 +68,111 @@ class _CandlePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final axisW = twoMa ? 68.0 : 62.0;
-    final volH = twoMa ? 26.0 : 30.0;
+    if (candles.isEmpty || size.width <= 80 || size.height <= 50) return;
+    const axisW = 70.0;
+    const volH = 26.0;
+    const timeH = 16.0;
     final chartW = size.width - axisW;
-    final chartH = size.height - volH - 8;
+    final plotBottom = size.height - timeH;
+    final chartH = plotBottom - volH - 8;
 
     final hi = candles.map((c) => c.high).reduce(max);
     final lo = candles.map((c) => c.low).reduce(min);
-    final range = max(hi - lo, 0.01);
+    final range = (hi - lo) > 0 ? (hi - lo) : (hi > 0 ? hi * 0.02 : 1.0);
     double y(double v) => chartH - (v - lo) / range * chartH;
 
     final grid = Paint()
       ..color = (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06)
       ..strokeWidth = 1;
-    final labelStyle = TextStyle(color: textColor, fontSize: 10);
+    final labelStyle = TextStyle(color: textColor, fontSize: 9.5);
     for (var i = 0; i <= 4; i++) {
       final gy = chartH * i / 4;
       canvas.drawLine(Offset(0, gy), Offset(chartW, gy), grid);
       if (twoMa && (i == 0 || i == 4)) continue;
       final val = hi - range * i / 4;
       final tp = TextPainter(
-        text: TextSpan(
-          text: fmtUsd(val, decimals: twoMa ? 2 : 0),
-          style: labelStyle,
-        ),
+        text: TextSpan(text: fmtDexPrice(val), style: labelStyle),
         textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(chartW + 6, gy - tp.height / 2));
+      )..layout(maxWidth: axisW - 6);
+      tp.paint(canvas, Offset(chartW + 5, gy - tp.height / 2));
     }
     for (var i = 1; i < 6; i++) {
       final gx = chartW * i / 6;
-      canvas.drawLine(Offset(gx, 0), Offset(gx, size.height), grid);
+      canvas.drawLine(Offset(gx, 0), Offset(gx, plotBottom), grid);
     }
 
     final step = chartW / candles.length;
-    final bodyW = step * 0.6;
-    final maxVol = candles.map((c) => (c.close - c.open).abs()).reduce(max) + 1;
+    final bodyW = max(1.5, step * 0.6);
+    final maxRawVol = candles.map((c) => c.volume).reduce(max);
+    final useRealVol = maxRawVol > 0;
+    final maxVol = useRealVol
+        ? maxRawVol
+        : max(
+            candles.map((c) => (c.close - c.open).abs()).reduce(max),
+            range * 0.01,
+          );
 
-    final ma = Path();
-    for (var i = 0; i < candles.length; i++) {
-      final from = max(0, i - 7);
-      final slice = candles.sublist(from, i + 1);
-      final avg =
-          slice.map((c) => c.close).reduce((a, b) => a + b) / slice.length;
-      final p = Offset(step * i + step / 2, y(avg));
-      i == 0 ? ma.moveTo(p.dx, p.dy) : ma.lineTo(p.dx, p.dy);
+    if (lineMode) {
+      final linePath = Path();
+      for (var i = 0; i < candles.length; i++) {
+        final cx = step * i + step / 2;
+        final cy = y(candles[i].close);
+        i == 0 ? linePath.moveTo(cx, cy) : linePath.lineTo(cx, cy);
+      }
+      final fillPath = Path.from(linePath)
+        ..lineTo(chartW, chartH)
+        ..lineTo(0, chartH)
+        ..close();
+      final upOverall = candles.last.close >= candles.first.open;
+      final lc = upOverall ? AppColors.green : AppColors.red;
+      canvas.drawPath(
+        fillPath,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [lc.withValues(alpha: 0.28), lc.withValues(alpha: 0.0)],
+          ).createShader(Rect.fromLTWH(0, 0, chartW, chartH)),
+      );
+      canvas.drawPath(
+        linePath,
+        Paint()
+          ..color = lc
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0,
+      );
     }
 
     for (var i = 0; i < candles.length; i++) {
       final c = candles[i];
       final up = c.close >= c.open;
-      final paint = Paint()..color = up ? AppColors.green : AppColors.red;
       final cx = step * i + step / 2;
-      canvas.drawLine(
-        Offset(cx, y(c.high)),
-        Offset(cx, y(c.low)),
-        paint..strokeWidth = 1,
-      );
-      final top = y(max(c.open, c.close));
-      final bot = y(min(c.open, c.close));
-      canvas.drawRect(
-        Rect.fromLTRB(cx - bodyW / 2, top, cx + bodyW / 2, max(bot, top + 1)),
-        paint,
-      );
-      final vh = (c.close - c.open).abs() / maxVol * volH;
+      if (!lineMode) {
+        final paint = Paint()..color = up ? AppColors.green : AppColors.red;
+        canvas.drawLine(
+          Offset(cx, y(c.high)),
+          Offset(cx, y(c.low)),
+          paint..strokeWidth = 1,
+        );
+        final top = y(max(c.open, c.close));
+        final bot = y(min(c.open, c.close));
+        canvas.drawRect(
+          Rect.fromLTRB(cx - bodyW / 2, top, cx + bodyW / 2, max(bot, top + 1)),
+          paint,
+        );
+      }
+      final vVal = useRealVol ? c.volume : (c.close - c.open).abs();
+      final vh = (vVal / maxVol).clamp(0.0, 1.0) * volH;
       canvas.drawRect(
         Rect.fromLTRB(
           cx - bodyW / 2,
-          size.height - vh,
+          plotBottom - vh,
           cx + bodyW / 2,
-          size.height,
+          plotBottom,
         ),
         Paint()
           ..color = (up ? AppColors.green : AppColors.red).withValues(
-            alpha: 0.45,
+            alpha: 0.42,
           ),
       );
     }
@@ -137,67 +186,134 @@ class _CandlePainter extends CustomPainter {
           ..strokeWidth = 1.4,
       );
       canvas.drawPath(
-        _ma(20, step, y),
+        _ma(25, step, y),
         Paint()
           ..color = const Color(0xFFF59E0B)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.4,
       );
-    } else {
-      canvas.drawPath(
-        ma,
-        Paint()
-          ..color = AppColors.primaryLight
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.6,
-      );
     }
 
-    final last = candles.last.close;
-    final ly = y(last);
+    final lastCandle = candles.last;
+    final last = lastCandle.close;
+    final lastUp = lastCandle.close >= lastCandle.open;
+    final pillColor = lastUp ? AppColors.green : AppColors.red;
+    final ly = y(last).clamp(9.0, max(9.0, chartH - 9.0)).toDouble();
     final dash = Paint()
-      ..color = AppColors.green.withValues(alpha: 0.6)
+      ..color = pillColor.withValues(alpha: 0.65)
       ..strokeWidth = 1;
     for (double x = 0; x < chartW; x += 6) {
-      canvas.drawLine(Offset(x, ly), Offset(x + 3, ly), dash);
+      canvas.drawLine(Offset(x, ly), Offset(min(x + 3, chartW), ly), dash);
     }
     final tp = TextPainter(
       text: TextSpan(
-        text: fmtUsd(last),
+        text: fmtDexPrice(last),
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 10,
+          fontSize: 9.5,
           fontWeight: FontWeight.w600,
         ),
       ),
       textDirection: TextDirection.ltr,
-    )..layout();
+    )..layout(maxWidth: axisW - 4);
     final r = RRect.fromRectAndRadius(
       Rect.fromLTWH(chartW + 2, ly - 9, axisW - 2, 18),
       const Radius.circular(4),
     );
-    canvas.drawRRect(r, Paint()..color = AppColors.green);
+    canvas.drawRRect(r, Paint()..color = pillColor);
     tp.paint(
       canvas,
       Offset(chartW + 2 + (axisW - 2 - tp.width) / 2, ly - tp.height / 2),
     );
+
+    if (lastCandle.volume > 0) {
+      final vTxt = fmtCompactUsd(lastCandle.volume).replaceFirst('\$', '');
+      final vtp = TextPainter(
+        text: TextSpan(
+          text: vTxt,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: axisW - 4);
+      final vy = (plotBottom - 16).clamp(chartH + 4, plotBottom - 16);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(chartW + 2, vy.toDouble(), axisW - 2, 16),
+          const Radius.circular(4),
+        ),
+        Paint()..color = pillColor,
+      );
+      vtp.paint(
+        canvas,
+        Offset(
+          chartW + 2 + (axisW - 2 - vtp.width) / 2,
+          vy + (16 - vtp.height) / 2,
+        ),
+      );
+    }
+
+    String fmtTs(int sec) {
+      if (sec <= 0) return '';
+      final dt = DateTime.fromMillisecondsSinceEpoch(sec * 1000);
+      if (dt.hour == 0 && dt.minute == 0) {
+        return dt.day.toString().padLeft(2, '0');
+      }
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+
+    final idxList = [0, candles.length ~/ 2, candles.length - 1];
+    for (var j = 0; j < idxList.length; j++) {
+      final label = fmtTs(candles[idxList[j]].time);
+      if (label.isEmpty) continue;
+      final ttp = TextPainter(
+        text: TextSpan(text: label, style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final x = j == 0
+          ? 2.0
+          : (j == 1
+                ? (chartW - ttp.width) / 2
+                : max(2.0, chartW - ttp.width - 2));
+      ttp.paint(canvas, Offset(x, plotBottom + 3));
+    }
   }
 
   @override
   bool shouldRepaint(covariant _CandlePainter old) =>
-      old.candles != candles || old.isDark != isDark;
+      old.candles != candles ||
+      old.isDark != isDark ||
+      old.twoMa != twoMa ||
+      old.lineMode != lineMode;
 }
 
-/// Bid/Ask market depth curve chart.
+/// Dynamic Bid/Ask AMM + Swap depth chart computed from live trades & liquidity.
 class DepthChart extends StatelessWidget {
   final double midPrice;
-  const DepthChart({super.key, required this.midPrice});
+  final List<DexTrade> trades;
+  final double liquidity;
+
+  const DepthChart({
+    super.key,
+    required this.midPrice,
+    this.trades = const [],
+    this.liquidity = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
     final p = context.pal;
     return CustomPaint(
-      painter: _DepthPainter(midPrice, p.textMuted, p.border),
+      painter: _DepthPainter(
+        midPrice,
+        trades,
+        liquidity,
+        p.textMuted,
+        p.border,
+      ),
       size: Size.infinite,
     );
   }
@@ -205,15 +321,25 @@ class DepthChart extends StatelessWidget {
 
 class _DepthPainter extends CustomPainter {
   final double midPrice;
+  final List<DexTrade> trades;
+  final double liquidity;
   final Color textColor;
   final Color borderColor;
-  _DepthPainter(this.midPrice, this.textColor, this.borderColor);
+
+  _DepthPainter(
+    this.midPrice,
+    this.trades,
+    this.liquidity,
+    this.textColor,
+    this.borderColor,
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
     final h = size.height - 20;
     final w = size.width;
     final mid = w * 0.5;
+    if (h <= 10 || w <= 40 || midPrice <= 0) return;
 
     final grid = Paint()
       ..color = borderColor.withValues(alpha: 0.5)
@@ -221,18 +347,47 @@ class _DepthPainter extends CustomPainter {
     canvas.drawLine(Offset(mid, 0), Offset(mid, h), grid);
     canvas.drawLine(Offset(0, h), Offset(w, h), grid);
 
-    // Bid curve (left, green)
-    final bid = Path()
-      ..moveTo(0, h * 0.14)
-      ..lineTo(w * 0.15, h * 0.18)
-      ..lineTo(w * 0.15, h * 0.36)
-      ..lineTo(w * 0.30, h * 0.38)
-      ..lineTo(w * 0.30, h * 0.58)
-      ..lineTo(w * 0.42, h * 0.62)
-      ..lineTo(w * 0.42, h * 0.85)
-      ..lineTo(mid - 3, h);
+    // Derive cumulative bid/ask buckets dynamically from live trades + AMM reserve depth.
+    const levels = 6;
+    final baseDepth = max(1.0, liquidity > 0 ? liquidity * 0.02 : 1000.0);
+    final bids = List<double>.filled(levels, baseDepth / levels);
+    final asks = List<double>.filled(levels, baseDepth / levels);
+    for (final t in trades) {
+      final p = t.price > 0 ? t.price : midPrice;
+      final pct = ((p - midPrice).abs() / midPrice) / 0.02;
+      final idx = (pct * (levels - 1)).floor().clamp(0, levels - 1);
+      final weight = max(t.usd, 50.0);
+      if (t.isBuy) {
+        bids[idx] += weight;
+      } else {
+        asks[idx] += weight;
+      }
+    }
+
+    // Cumulative depth outward from midPrice.
+    final cumBid = <double>[];
+    final cumAsk = <double>[];
+    var rb = 0.0;
+    var ra = 0.0;
+    for (var i = 0; i < levels; i++) {
+      rb += bids[i];
+      ra += asks[i];
+      cumBid.add(rb);
+      cumAsk.add(ra);
+    }
+    final maxDepth = max(cumBid.last, cumAsk.last);
+
+    final bid = Path()..moveTo(mid - 2, h);
+    for (var i = 0; i < levels; i++) {
+      final x = mid - 2 - (mid - 2) * ((i + 1) / levels);
+      final y = h - (cumBid[i] / maxDepth) * (h * 0.86);
+      final prevX = mid - 2 - (mid - 2) * (i / levels);
+      bid.lineTo(prevX, y);
+      bid.lineTo(x, y);
+    }
     final bidFill = Path.from(bid)
       ..lineTo(0, h)
+      ..lineTo(mid - 2, h)
       ..close();
     canvas.drawPath(
       bidFill,
@@ -241,7 +396,7 @@ class _DepthPainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            AppColors.green.withValues(alpha: 0.32),
+            AppColors.green.withValues(alpha: 0.30),
             AppColors.green.withValues(alpha: 0.02),
           ],
         ).createShader(Rect.fromLTWH(0, 0, mid, h)),
@@ -254,19 +409,17 @@ class _DepthPainter extends CustomPainter {
         ..strokeWidth = 1.8,
     );
 
-    // Ask curve (right, red)
-    final ask = Path()
-      ..moveTo(mid + 3, h)
-      ..lineTo(w * 0.58, h * 0.82)
-      ..lineTo(w * 0.58, h * 0.60)
-      ..lineTo(w * 0.72, h * 0.55)
-      ..lineTo(w * 0.72, h * 0.34)
-      ..lineTo(w * 0.86, h * 0.30)
-      ..lineTo(w * 0.86, h * 0.14)
-      ..lineTo(w, h * 0.10);
+    final ask = Path()..moveTo(mid + 2, h);
+    for (var i = 0; i < levels; i++) {
+      final x = mid + 2 + (mid - 2) * ((i + 1) / levels);
+      final y = h - (cumAsk[i] / maxDepth) * (h * 0.86);
+      final prevX = mid + 2 + (mid - 2) * (i / levels);
+      ask.lineTo(prevX, y);
+      ask.lineTo(x, y);
+    }
     final askFill = Path.from(ask)
       ..lineTo(w, h)
-      ..lineTo(mid + 3, h)
+      ..lineTo(mid + 2, h)
       ..close();
     canvas.drawPath(
       askFill,
@@ -275,7 +428,7 @@ class _DepthPainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            AppColors.red.withValues(alpha: 0.32),
+            AppColors.red.withValues(alpha: 0.30),
             AppColors.red.withValues(alpha: 0.02),
           ],
         ).createShader(Rect.fromLTWH(mid, 0, mid, h)),
@@ -299,17 +452,19 @@ class _DepthPainter extends CustomPainter {
       tp.paint(canvas, Offset(dx - tp.width / 2, h + 4));
     }
 
-    label(fmtUsd(midPrice * 0.98), w * 0.16);
-    label(fmtUsd(midPrice), mid);
-    label(fmtUsd(midPrice * 1.02), w * 0.84);
+    label(fmtDexPrice(midPrice * 0.98), w * 0.16);
+    label(fmtDexPrice(midPrice), mid);
+    label(fmtDexPrice(midPrice * 1.02), w * 0.84);
   }
 
   @override
   bool shouldRepaint(covariant _DepthPainter old) =>
-      old.midPrice != midPrice || old.textColor != textColor;
+      old.midPrice != midPrice ||
+      old.trades != trades ||
+      old.liquidity != liquidity ||
+      old.textColor != textColor;
 }
 
-/// Small area line used in wallet balance card & tickers.
 class SparkLine extends StatelessWidget {
   final List<double> values;
   final Color color;
@@ -320,8 +475,13 @@ class SparkLine extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) =>
-      CustomPaint(painter: _SparkPainter(values, color), size: Size.infinite);
+  Widget build(BuildContext context) {
+    if (values.length < 2) return const SizedBox.shrink();
+    return CustomPaint(
+      painter: _SparkPainter(values, color),
+      size: Size.infinite,
+    );
+  }
 }
 
 class _SparkPainter extends CustomPainter {
@@ -331,6 +491,7 @@ class _SparkPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (v.length < 2) return;
     final hi = v.reduce(max), lo = v.reduce(min);
     final range = max(hi - lo, 0.001);
     final path = Path();
@@ -364,70 +525,6 @@ class _SparkPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// Decorative QR-like code (deterministic from data string).
-class FakeQr extends StatelessWidget {
-  final String data;
-  final double size;
-  const FakeQr({super.key, required this.data, this.size = 130});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(8),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: context.pal.border),
-    ),
-    child: CustomPaint(
-      size: Size.square(size),
-      painter: _QrPainter(data.hashCode),
-    ),
-  );
-}
-
-class _QrPainter extends CustomPainter {
-  final int seed;
-  _QrPainter(this.seed);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const n = 29;
-    final cell = size.width / n;
-    final r = Random(seed);
-    final black = Paint()..color = Colors.black;
-    bool inFinder(int x, int y) =>
-        (x < 8 && y < 8) || (x >= n - 8 && y < 8) || (x < 8 && y >= n - 8);
-    for (var y = 0; y < n; y++) {
-      for (var x = 0; x < n; x++) {
-        if (inFinder(x, y)) continue;
-        if (r.nextBool()) {
-          canvas.drawRect(
-            Rect.fromLTWH(x * cell, y * cell, cell + 0.3, cell + 0.3),
-            black,
-          );
-        }
-      }
-    }
-    void finder(double ox, double oy) {
-      canvas.drawRect(Rect.fromLTWH(ox, oy, cell * 7, cell * 7), black);
-      canvas.drawRect(
-        Rect.fromLTWH(ox + cell, oy + cell, cell * 5, cell * 5),
-        Paint()..color = Colors.white,
-      );
-      canvas.drawRect(
-        Rect.fromLTWH(ox + cell * 2, oy + cell * 2, cell * 3, cell * 3),
-        black,
-      );
-    }
-
-    finder(0, 0);
-    finder((n - 7) * cell, 0);
-    finder(0, (n - 7) * cell);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _SparkPainter oldDelegate) =>
+      oldDelegate.v != v || oldDelegate.color != color;
 }
